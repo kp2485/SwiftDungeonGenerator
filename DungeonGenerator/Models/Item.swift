@@ -5,7 +5,6 @@
 //  Created by Kyle Peterson on 11/11/24.
 //
 
-// Base Item class
 class Item {
     var name: String
     var symbol: Character

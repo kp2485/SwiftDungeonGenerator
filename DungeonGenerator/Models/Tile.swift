@@ -5,7 +5,6 @@
 //  Created by Kyle Peterson on 11/11/24.
 //
 
-
 import Foundation
 
 // Base Tile class

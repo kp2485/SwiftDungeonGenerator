@@ -5,7 +5,6 @@
 //  Created by Kyle Peterson on 11/11/24.
 //
 
-
 class Room {
     var tiles: [Tile] = []
     var entities: [Entity] = []
