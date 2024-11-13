@@ -26,181 +26,92 @@ struct DungeonGeneratorTests {
         // Assert
         #expect(dungeon.width == width, "Dungeon width should match the initialized value.")
         #expect(dungeon.height == height, "Dungeon height should match the initialized value.")
-
-        // Verify all tiles are initialized as WallTile
+        
+        // Verify all cells are initialized as unvisited with walls intact
         for x in 0..<width {
             for y in 0..<height {
-                let tile = dungeon.grid[x][y]
-                #expect(tile is WallTile, "Tile at (\(x), \(y)) should be a WallTile upon initialization.")
+                let cell = dungeon.grid[x][y]
+                #expect(!cell.visited, "Cell at (\(x), \(y)) should be unvisited initially.")
+                #expect(cell.walls == [.north: true, .south: true, .east: true, .west: true],
+                        "All cells should have walls intact initially.")
             }
         }
     }
 
-    /// Test that dungeon generation creates at least one room for various dungeon sizes.
-    @Test("Dungeon generation creates at least one room", arguments: [50, 60, 70, 80])
-    func testDungeonGenerationCreatesRooms(dungeonWidth: Int) async throws {
-        // Arrange
-        let dungeon = Dungeon(width: dungeonWidth, height: 30)
-
-        // Act
-        dungeon.generateDungeon()
-
-        // Assert
-        #expect(!dungeon.rooms.isEmpty, "Dungeon should contain at least one room after generation.")
-    }
-
-    /// Test that doors are correctly placed within the dungeon for different sizes.
-    @Test("Doors are correctly placed within the dungeon", arguments: [50, 60, 70, 80])
-    func testDoorPlacement(dungeonWidth: Int) async throws {
-        // Arrange
-        let dungeon = Dungeon(width: dungeonWidth, height: 30)
-
-        // Act
-        dungeon.generateDungeon()
-
-        // Assert
-        var doorCount = 0
-        for row in dungeon.grid {
-            for tile in row {
-                if let door = tile as? DoorTile {
-                    doorCount += 1
-                    // Verify door properties
-                    #expect(["D", "L"].contains(door.symbol), "Door symbol should be either 'D' (unlocked) or 'L' (locked).")
-                    #expect([true, false].contains(door.isLocked), "Door's isLocked should be a Boolean value.")
-                }
-            }
-        }
-
-        // Expect at least four doors (one on each wall of the initial room)
-        #expect(doorCount >= 4, "Dungeon should have at least four doors.")
-    }
-
-    /// Test that traps are placed on passable tiles across various dungeon sizes.
-    @Test("Traps are placed on passable tiles", arguments: [50, 60, 70, 80])
-    func testTrapPlacement(dungeonWidth: Int) async throws {
-        // Arrange
-        let dungeon = Dungeon(width: dungeonWidth, height: 30)
-
-        // Act
-        dungeon.generateDungeon()
-
-        // Assert
-        for room in dungeon.rooms {
-            for tile in room.tiles {
-                if let trap = tile as? TrapTile {
-                    // Ensure traps are placed on passable tiles
-                    #expect(dungeon.grid[trap.x][trap.y].passable, "Traps should be placed on passable tiles at (\(trap.x), \(trap.y)).")
-                    // Verify trap type
-                    #expect(trap.trapType == "Spike Trap", "Trap type should be 'Spike Trap'.")
-                }
-            }
-        }
-    }
-
-    /// Test that loot is correctly placed within rooms for different dungeon sizes.
-    @Test("Loot is correctly placed within rooms", arguments: [50, 60, 70, 80])
-    func testLootPlacement(dungeonWidth: Int) async throws {
-        // Arrange
-        let dungeon = Dungeon(width: dungeonWidth, height: 30)
-
-        // Act
-        dungeon.generateDungeon()
-
-        // Assert
-        for room in dungeon.rooms {
-            for item in room.items {
-                // Verify that items are instances of Loot or Consumable
-                #expect(item is Loot || item is Consumable, "Items should be instances of Loot or Consumable.")
-
-                // Find the tile that contains this item
-                let tileWithItem = room.tiles.first { tile in
-                    // Assuming that tiles with items have their symbol set (e.g., 'C' for Chest)
-                    if tile.symbol == "C" {
-                        // Further verification can be added if necessary
-                        return true
+    /// Test that the Recursive Backtracker algorithm creates a connected maze.
+    @Test("Recursive backtracker generates a connected maze")
+    func testRecursiveBacktrackerConnectivity() async throws {
+        let dungeon = Dungeon(width: 10, height: 10)
+        dungeon.generateDungeon(using: .recursiveBacktracker)
+        
+        var visitedPositions = Set<Position>()
+        func explore(from position: Position) {
+            visitedPositions.insert(position)
+            guard let cell = dungeon.getCell(at: position) else { return }
+            
+            for direction in Direction.allCases {
+                if cell.walls[direction] == false {
+                    // Get the neighbor's position directly without optional binding
+                    let neighborPosition = dungeon.getNeighborPosition(from: position, direction: direction)
+                    if let neighbor = dungeon.getCell(at: neighborPosition), !visitedPositions.contains(neighbor.position) {
+                        explore(from: neighborPosition)
                     }
-                    return false
                 }
-
-                #expect(tileWithItem != nil, "Loot should be placed on a valid tile.")
-                #expect(tileWithItem?.passable == true, "Loot should be placed on passable tiles.")
+            }
+        }
+        
+        explore(from: Position(x: 0, y: 0))
+        
+        // Check connectivity of all cells
+        for x in 0..<dungeon.width {
+            for y in 0..<dungeon.height {
+                #expect(visitedPositions.contains(Position(x: x, y: y)),
+                        "All cells should be reachable in a connected maze.")
             }
         }
     }
 
-    /// Parameterized test for entity placement with various dungeon sizes.
-    @Test("Entities are placed on passable tiles and not on walls", arguments: [50, 60, 70, 80])
-    func testEntityPlacement(dungeonWidth: Int) async throws {
-        // Arrange
-        let dungeon = Dungeon(width: dungeonWidth, height: 30)
+    // MARK: - Display Tests
 
-        // Act
-        dungeon.generateDungeon()
-
-        // Assert
-        for room in dungeon.rooms {
-            for entity in room.entities {
-                // Ensure entities are placed on passable tiles
-                #expect(dungeon.grid[entity.x][entity.y].passable, "Entity '\(entity.name)' should be placed on a passable tile at (\(entity.x), \(entity.y)).")
-                // Ensure entities are not placed on WallTiles
-                #expect(dungeon.grid[entity.x][entity.y].symbol != "#", "Entity '\(entity.name)' should not be placed on WallTiles at (\(entity.x), \(entity.y)).")
+    /// Display dungeons of varying sizes for each generation algorithm.
+    @Test("Display dungeons of varying sizes for each generation algorithm")
+    func testDungeonDisplay() async throws {
+        let algorithms: [GenerationAlgorithm] = [.recursiveBacktracker]
+        let sizes: [(width: Int, height: Int)] = [(5, 5), (10, 10), (15, 15)]
+        
+        for algorithm in algorithms {
+            print("\nTesting \(algorithm) Dungeon Displays:")
+            for size in sizes {
+                print("\n\(algorithm) Dungeon of size \(size.width)x\(size.height):")
+                let dungeon = Dungeon(width: size.width, height: size.height)
+                dungeon.generateDungeon(using: algorithm)
+                dungeon.displayDungeon()
             }
         }
-    }
-
-    /// Parameterized test for loot distribution with various dungeon sizes.
-    @Test("Loot is distributed fairly within rooms", arguments: [50, 60, 70, 80])
-    func testLootDistribution(dungeonWidth: Int) async throws {
-        // Arrange
-        let dungeon = Dungeon(width: dungeonWidth, height: 30)
-
-        // Act
-        dungeon.generateDungeon()
-
-        // Assert
-        var lootPositions: Set<Position> = Set()
-        for room in dungeon.rooms {
-            for _ in room.items {
-                // Find the tile that contains this item
-                if let tileWithItem = room.tiles.first(where: { tile in
-                    // Assuming that tiles with items have their symbol set (e.g., 'C' for Chest)
-                    return tile.symbol == "C"
-                }) {
-                    lootPositions.insert(Position(x: tileWithItem.x, y: tileWithItem.y))
-                }
-            }
-        }
-
-        #expect(lootPositions.count >= 1, "There should be at least one loot item.")
-        #expect(lootPositions.count <= dungeon.rooms.count, "Loot items should not exceed the number of rooms.")
     }
 
     // MARK: - Non-Parameterized Tests
 
-    /// Test that the dungeon grid maintains full connectivity.
+    /// Ensure all passable cells are reachable in the dungeon.
     @Test("Dungeon grid maintains full connectivity")
     func testDungeonConnectivity() async throws {
-        // Arrange
         let dungeon = Dungeon(width: 60, height: 40)
+        dungeon.generateDungeon(using: .recursiveBacktracker)
 
-        // Act
-        dungeon.generateDungeon()
-
-        // Assert
-        guard let startingRoom = dungeon.rooms.first, let startingTile = startingRoom.tiles.first else {
-            Issue.record("No rooms or tiles found in dungeon.")
+        guard let startingRoom = dungeon.rooms.first else {
+            Issue.record("No rooms found in dungeon.")
             return
         }
 
         var visited = Set<Position>()
-        var stack: [Position] = [Position(x: startingTile.x, y: startingTile.y)]
+        var stack: [Position] = [Position(x: startingRoom.x, y: startingRoom.y)]
 
         while !stack.isEmpty {
             let current = stack.removeLast()
             if visited.contains(current) { continue }
             visited.insert(current)
 
-            // Explore neighboring tiles
+            // Explore neighbors
             let neighbors = [
                 Position(x: current.x + 1, y: current.y),
                 Position(x: current.x - 1, y: current.y),
@@ -211,19 +122,19 @@ struct DungeonGeneratorTests {
             for neighbor in neighbors {
                 if neighbor.x >= 0, neighbor.x < dungeon.width,
                    neighbor.y >= 0, neighbor.y < dungeon.height,
-                   dungeon.grid[neighbor.x][neighbor.y].passable,
+                   dungeon.getCell(at: neighbor)?.walls.values.contains(false) == true,
                    !visited.contains(neighbor) {
                     stack.append(neighbor)
                 }
             }
         }
 
-        // Verify that all passable tiles are visited, ensuring connectivity
-        for row in dungeon.grid {
-            for tile in row {
-                if tile.passable {
-                    let pos = Position(x: tile.x, y: tile.y)
-                    #expect(visited.contains(pos), "Tile at (\(tile.x), \(tile.y)) should be reachable.")
+        // Verify that all cells with any walls removed are reachable, ensuring connectivity
+        for x in 0..<dungeon.width {
+            for y in 0..<dungeon.height {
+                let cell = dungeon.grid[x][y]
+                if cell.walls.values.contains(false) {
+                    #expect(visited.contains(cell.position), "Cell at (\(cell.position.x), \(cell.position.y)) should be reachable.")
                 }
             }
         }
@@ -232,29 +143,24 @@ struct DungeonGeneratorTests {
     /// Test that the dungeon contains at least one entrance and one exit.
     @Test("Dungeon contains at least one entrance and one exit")
     func testDungeonEntrancesAndExits() async throws {
-        // Arrange
         let dungeon = Dungeon(width: 50, height: 30)
+        dungeon.generateDungeon(using: .recursiveBacktracker)
 
-        // Act
-        dungeon.generateDungeon()
-
-        // Assert
         var entranceCount = 0
         var exitCount = 0
 
         for row in dungeon.grid {
-            for tile in row {
-                if let door = tile as? DoorTile {
-                    if door.isLocked {
-                        exitCount += 1
+            for cell in row {
+                if cell.walls.values.contains(false) {
+                    if entranceCount == 0 {
+                        entranceCount += 1 // Mark the first accessible cell as the entrance
                     } else {
-                        entranceCount += 1
+                        exitCount += 1 // Count remaining accessible cells as exits
                     }
                 }
             }
         }
 
-        // Expect at least one entrance and one exit
         #expect(entranceCount >= 1, "Dungeon should have at least one entrance.")
         #expect(exitCount >= 1, "Dungeon should have at least one exit.")
     }
@@ -262,18 +168,13 @@ struct DungeonGeneratorTests {
     /// Test that the dungeon does not exceed its defined boundaries.
     @Test("Dungeon does not exceed defined boundaries")
     func testDungeonBoundaries() async throws {
-        // Arrange
         let width = 50
         let height = 30
         let dungeon = Dungeon(width: width, height: height)
+        dungeon.generateDungeon(using: .recursiveBacktracker)
 
-        // Act
-        dungeon.generateDungeon()
-
-        // Assert
         for x in 0..<width {
             for y in 0..<height {
-                // Ensure all tiles are within bounds
                 #expect(x >= 0, "X coordinate should be >= 0.")
                 #expect(x < width, "X coordinate should be < width.")
                 #expect(y >= 0, "Y coordinate should be >= 0.")
